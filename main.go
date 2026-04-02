@@ -37,6 +37,7 @@ func main() {
 	totalMinutes := totalAbsenceMinutes + totalTimeEntriesMinutes
 	requiredMinutes := utilities.RequiredWorkingMinutesPreviousMonth()
 	fmt.Printf("Required hours to track for previous month: %d\n", requiredMinutes/60)
+	fmt.Printf("Total hours tracked: %d\n", totalMinutes/60)
 
 	if totalMinutes < requiredMinutes {
 		fmt.Printf("You are %d minutes behind schedule.\n", requiredMinutes-totalMinutes)
