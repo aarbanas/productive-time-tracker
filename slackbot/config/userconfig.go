@@ -1,5 +1,6 @@
-package slackbot
+package config
 
+// UserConfig holds per-user Productive API credentials and preferences.
 type UserConfig struct {
 	Token    string `json:"token"`
 	OrgID    string `json:"orgId"`
