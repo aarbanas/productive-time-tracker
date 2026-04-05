@@ -5,9 +5,67 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/slack-go/slack"
 )
 
-// FirstTimeHelp returns the Slack slash-command JSON for onboarding.
+func ConfigurationModal(initialScheduleNotification bool) slack.ModalViewRequest {
+	scheduleOpt := slack.NewOptionBlockObject(
+		"schedule_on",
+		slack.NewTextBlockObject(slack.PlainTextType, "Last working day of each month at 12:00 UTC", false, false),
+		nil,
+	)
+	scheduleCheckbox := slack.NewCheckboxGroupsBlockElement("schedule_checkbox", scheduleOpt)
+	if initialScheduleNotification {
+		scheduleCheckbox.InitialOptions = []*slack.OptionBlockObject{scheduleOpt}
+	}
+
+	return slack.ModalViewRequest{
+		Type:       slack.VTModal,
+		Title:      slack.NewTextBlockObject(slack.PlainTextType, "Configuration", false, false),
+		Submit:     slack.NewTextBlockObject(slack.PlainTextType, "Save", false, false),
+		Close:      slack.NewTextBlockObject(slack.PlainTextType, "Cancel", false, false),
+		CallbackID: "config_modal",
+		Blocks: slack.Blocks{
+			BlockSet: []slack.Block{
+				slack.NewInputBlock(
+					"token_block",
+					slack.NewTextBlockObject(slack.PlainTextType, "Token", false, false),
+					nil,
+					slack.NewPlainTextInputBlockElement(
+						slack.NewTextBlockObject(slack.PlainTextType, "Enter token", false, false),
+						"token_input",
+					),
+				),
+				slack.NewInputBlock(
+					"org_block",
+					slack.NewTextBlockObject(slack.PlainTextType, "Org ID", false, false),
+					nil,
+					slack.NewPlainTextInputBlockElement(
+						slack.NewTextBlockObject(slack.PlainTextType, "Enter org ID", false, false),
+						"org_input",
+					),
+				),
+				slack.NewInputBlock(
+					"hours_block",
+					slack.NewTextBlockObject(slack.PlainTextType, "Min hours/day", false, false),
+					nil,
+					slack.NewPlainTextInputBlockElement(
+						slack.NewTextBlockObject(slack.PlainTextType, "e.g. 8", false, false),
+						"hours_input",
+					),
+				),
+				slack.NewInputBlock(
+					"schedule_block",
+					slack.NewTextBlockObject(slack.PlainTextType, "Monthly DM reminder", false, false),
+					nil,
+					scheduleCheckbox,
+				),
+			},
+		},
+	}
+}
+
 func FirstTimeHelp() map[string]interface{} {
 	return map[string]interface{}{
 		"response_type": "ephemeral",
@@ -39,7 +97,6 @@ func FirstTimeHelp() map[string]interface{} {
 	}
 }
 
-// MonthlySummary builds the Slack JSON for the monthly check result.
 func MonthlySummary(
 	totalAbsenceMinutes int32,
 	totalTimeEntriesMinutes int32,

@@ -5,6 +5,32 @@ import (
 	"time"
 )
 
+func isolateHolidayCache(t *testing.T) {
+	t.Helper()
+	holidayMu.Lock()
+	holidayCache = nil
+	holidayMu.Unlock()
+	t.Cleanup(func() {
+		holidayMu.Lock()
+		holidayCache = nil
+		holidayMu.Unlock()
+	})
+}
+
+func seedHolidayCache(t *testing.T, year int, dates map[string]bool) {
+	t.Helper()
+	holidayMu.Lock()
+	if holidayCache == nil {
+		holidayCache = make(map[int]map[string]bool)
+	}
+	cp := make(map[string]bool, len(dates))
+	for k, v := range dates {
+		cp[k] = v
+	}
+	holidayCache[year] = cp
+	holidayMu.Unlock()
+}
+
 func TestPreviousMonthBoundsAt(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -179,4 +205,157 @@ func TestRequiredWorkingMinutesPreviousMonth_smoke(t *testing.T) {
 		t.Fatalf("time bounds mismatch: got (%s,%s) vs PreviousMonthBounds (%s,%s)",
 			first.Format("2006-01-02"), last.Format("2006-01-02"), pf, pl)
 	}
+}
+
+func TestParseExecutionTime(t *testing.T) {
+	tests := []struct {
+		in           string
+		wantH, wantM int
+		wantErr      bool
+	}{
+		{in: "09:30", wantH: 9, wantM: 30},
+		{in: "00:00", wantH: 0, wantM: 0},
+		{in: "23:59", wantH: 23, wantM: 59},
+		{in: "not-a-time", wantErr: true},
+		{in: "25:00", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			h, m, err := parseExecutionTime(tt.in)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if h != tt.wantH || m != tt.wantM {
+				t.Fatalf("got hour=%d min=%d, want hour=%d min=%d", h, m, tt.wantH, tt.wantM)
+			}
+		})
+	}
+}
+
+func TestSameScheduleMinute(t *testing.T) {
+	t.Run("same local minute, different seconds and nanoseconds", func(t *testing.T) {
+		a := time.Date(2026, 1, 2, 10, 30, 45, 0, time.Local)
+		b := time.Date(2026, 1, 2, 10, 30, 0, 999999999, time.Local)
+		if !SameScheduleMinute(a, b) {
+			t.Fatal("expected times to match at minute precision")
+		}
+	})
+
+	t.Run("different minute", func(t *testing.T) {
+		a := time.Date(2026, 1, 2, 10, 30, 0, 0, time.Local)
+		b := time.Date(2026, 1, 2, 10, 31, 0, 0, time.Local)
+		if SameScheduleMinute(a, b) {
+			t.Fatal("expected times not to match")
+		}
+	})
+
+	t.Run("same instant in different zones normalizes to local minute", func(t *testing.T) {
+		plus2 := time.FixedZone("Plus2", 2*3600)
+		utc := time.Date(2026, 1, 2, 12, 0, 30, 0, time.UTC)
+		plus2Wall := time.Date(2026, 1, 2, 14, 0, 45, 0, plus2)
+		if !SameScheduleMinute(utc, plus2Wall) {
+			t.Fatal("expected same schedule minute after conversion to local")
+		}
+	})
+}
+
+func TestLastWorkingDay(t *testing.T) {
+	t.Setenv("TZ", "UTC")
+
+	t.Run("April 2026 — last calendar day is a weekday", func(t *testing.T) {
+		isolateHolidayCache(t)
+		seedHolidayCache(t, 2026, map[string]bool{})
+
+		got, err := lastWorkingDay(2026, time.April)
+		if err != nil {
+			t.Fatalf("lastWorkingDay: %v", err)
+		}
+		want := time.Date(2026, time.April, 30, 0, 0, 0, 0, time.Local)
+		if !got.Equal(want) {
+			t.Fatalf("got %v, want %v", got.Format(time.RFC3339), want.Format(time.RFC3339))
+		}
+	})
+
+	t.Run("May 2026 — month ends on weekend, walks backward", func(t *testing.T) {
+		isolateHolidayCache(t)
+		seedHolidayCache(t, 2026, map[string]bool{})
+
+		got, err := lastWorkingDay(2026, time.May)
+		if err != nil {
+			t.Fatalf("lastWorkingDay: %v", err)
+		}
+		want := time.Date(2026, time.May, 29, 0, 0, 0, 0, time.Local)
+		if !got.Equal(want) {
+			t.Fatalf("got %v, want %v", got.Format(time.RFC3339), want.Format(time.RFC3339))
+		}
+	})
+
+	t.Run("April 2026 — public holiday on last weekday shifts earlier", func(t *testing.T) {
+		isolateHolidayCache(t)
+		seedHolidayCache(t, 2026, map[string]bool{"2026-04-30": true})
+
+		got, err := lastWorkingDay(2026, time.April)
+		if err != nil {
+			t.Fatalf("lastWorkingDay: %v", err)
+		}
+		want := time.Date(2026, time.April, 29, 0, 0, 0, 0, time.Local)
+		if !got.Equal(want) {
+			t.Fatalf("got %v, want %v", got.Format(time.RFC3339), want.Format(time.RFC3339))
+		}
+	})
+}
+
+func TestNextRunLastWorkingDayUTC(t *testing.T) {
+	t.Setenv("TZ", "UTC")
+
+	t.Run("last working day of April at 12:00 UTC", func(t *testing.T) {
+		isolateHolidayCache(t)
+		seedHolidayCache(t, 2026, map[string]bool{})
+
+		now := time.Date(2026, time.April, 5, 12, 0, 0, 0, time.UTC)
+		got, err := NextRunLastWorkingDayUTC(now, 12, 0)
+		if err != nil {
+			t.Fatalf("NextRunLastWorkingDayUTC: %v", err)
+		}
+		want := time.Date(2026, time.April, 30, 12, 0, 0, 0, time.UTC)
+		if !got.Equal(want) {
+			t.Fatalf("got %v, want %v", got.UTC().Format(time.RFC3339), want.UTC().Format(time.RFC3339))
+		}
+	})
+}
+
+func TestNextRunTime(t *testing.T) {
+	t.Setenv("TZ", "UTC")
+
+	t.Run("invalid execution time", func(t *testing.T) {
+		isolateHolidayCache(t)
+		seedHolidayCache(t, 2026, map[string]bool{})
+
+		_, err := NextRunTime(time.Date(2026, time.April, 5, 12, 0, 0, 0, time.UTC), "not-a-time")
+		if err == nil {
+			t.Fatal("expected error for bad execution time")
+		}
+	})
+
+	t.Run("combines last working day of month with parsed clock", func(t *testing.T) {
+		isolateHolidayCache(t)
+		seedHolidayCache(t, 2026, map[string]bool{})
+
+		now := time.Date(2026, time.April, 5, 12, 0, 0, 0, time.UTC)
+		got, err := NextRunTime(now, "14:05")
+		if err != nil {
+			t.Fatalf("NextRunTime: %v", err)
+		}
+		want := time.Date(2026, time.April, 30, 14, 5, 0, 0, time.Local)
+		if !got.Equal(want) {
+			t.Fatalf("got %v, want %v", got.Format(time.RFC3339), want.Format(time.RFC3339))
+		}
+	})
 }

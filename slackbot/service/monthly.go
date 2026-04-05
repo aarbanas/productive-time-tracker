@@ -9,7 +9,6 @@ import (
 	"github.com/aarbanas/productive-time-tracker/utilities"
 )
 
-// MonthlySummaryForUser loads Productive data and returns Slack block-kit JSON for the summary.
 func MonthlySummaryForUser(cfg config.UserConfig) (map[string]interface{}, error) {
 	client := api.NewClient(cfg.Token, cfg.OrgID)
 
@@ -31,7 +30,7 @@ func MonthlySummaryForUser(cfg config.UserConfig) (map[string]interface{}, error
 		totalTimeEntriesMinutes,
 		requiredMinutes,
 		totalMinutes,
-		firstDayPrevMonth,
-		lastDayPrevMonth,
+		*firstDayPrevMonth,
+		*lastDayPrevMonth,
 	), nil
 }

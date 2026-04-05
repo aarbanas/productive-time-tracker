@@ -6,13 +6,13 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"maps"
 	"sync"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
-// Store persists user configs in S3 as a single JSON object.
 type Store struct {
 	mu     sync.RWMutex
 	users  map[string]UserConfig
@@ -21,7 +21,6 @@ type Store struct {
 	key    string
 }
 
-// NewStore builds an S3-backed store. Call Load before serving traffic.
 func NewStore(ctx context.Context, bucket, key string) (*Store, error) {
 	cfg, err := awsconfig.LoadDefaultConfig(ctx)
 	if err != nil {
@@ -35,7 +34,6 @@ func NewStore(ctx context.Context, bucket, key string) (*Store, error) {
 	}, nil
 }
 
-// Load replaces in-memory configs from S3. Missing object is ignored.
 func (s *Store) Load(ctx context.Context) {
 	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: &s.bucket,
@@ -64,7 +62,6 @@ func (s *Store) Load(ctx context.Context) {
 	log.Println("Configs loaded from S3")
 }
 
-// Save writes the current map to S3.
 func (s *Store) Save(ctx context.Context) {
 	s.mu.RLock()
 	data, err := json.MarshalIndent(s.users, "", "  ")
@@ -88,14 +85,12 @@ func (s *Store) Save(ctx context.Context) {
 	log.Println("Configs saved to S3")
 }
 
-// SaveAsync runs Save in a new goroutine (detached context).
 func (s *Store) SaveAsync() {
 	go func() {
 		s.Save(context.Background())
 	}()
 }
 
-// Get returns a user's config.
 func (s *Store) Get(userID string) (UserConfig, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -103,9 +98,16 @@ func (s *Store) Get(userID string) (UserConfig, bool) {
 	return c, ok
 }
 
-// Set updates a user's config in memory (not persisted until Save/SaveAsync).
 func (s *Store) Set(userID string, cfg UserConfig) {
 	s.mu.Lock()
 	s.users[userID] = cfg
 	s.mu.Unlock()
+}
+
+func (s *Store) Snapshot() map[string]UserConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make(map[string]UserConfig, len(s.users))
+	maps.Copy(out, s.users)
+	return out
 }

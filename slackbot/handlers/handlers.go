@@ -20,7 +20,6 @@ type Mux struct {
 	BotToken string
 }
 
-// SlashCommand handles Slack slash-command POSTs.
 func (m *Mux) SlashCommand(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "invalid request", http.StatusBadRequest)
@@ -44,55 +43,23 @@ func (m *Mux) SlashCommand(w http.ResponseWriter, r *http.Request) {
 	case "help":
 		views.WriteFirstTimeHelp(w)
 	default:
-		views.WritePlainText(w, "Unknown command. Use 'configure' or 'check'")
+		views.WritePlainText(w, "Unknown command. Use 'help' for more information.'")
 	}
 }
 
 func (m *Mux) handleConfigure(w http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	triggerID := r.FormValue("trigger_id")
+	userID := r.FormValue("user_id")
 
-	slackClient := slack.New(m.BotToken)
-
-	modal := slack.ModalViewRequest{
-		Type:       slack.VTModal,
-		Title:      slack.NewTextBlockObject(slack.PlainTextType, "Configuration", false, false),
-		Submit:     slack.NewTextBlockObject(slack.PlainTextType, "Save", false, false),
-		Close:      slack.NewTextBlockObject(slack.PlainTextType, "Cancel", false, false),
-		CallbackID: "config_modal",
-		Blocks: slack.Blocks{
-			BlockSet: []slack.Block{
-				slack.NewInputBlock(
-					"token_block",
-					slack.NewTextBlockObject(slack.PlainTextType, "Token", false, false),
-					nil,
-					slack.NewPlainTextInputBlockElement(
-						slack.NewTextBlockObject(slack.PlainTextType, "Enter token", false, false),
-						"token_input",
-					),
-				),
-				slack.NewInputBlock(
-					"org_block",
-					slack.NewTextBlockObject(slack.PlainTextType, "Org ID", false, false),
-					nil,
-					slack.NewPlainTextInputBlockElement(
-						slack.NewTextBlockObject(slack.PlainTextType, "Enter org ID", false, false),
-						"org_input",
-					),
-				),
-				slack.NewInputBlock(
-					"hours_block",
-					slack.NewTextBlockObject(slack.PlainTextType, "Min hours/day", false, false),
-					nil,
-					slack.NewPlainTextInputBlockElement(
-						slack.NewTextBlockObject(slack.PlainTextType, "e.g. 8", false, false),
-						"hours_input",
-					),
-				),
-			},
-		},
+	var initialScheduleNotification bool
+	if c, ok := m.Store.Get(userID); ok {
+		initialScheduleNotification = c.ScheduleNotification
 	}
 
+	modal := views.ConfigurationModal(initialScheduleNotification)
+
+	slackClient := slack.New(m.BotToken)
 	_, err := slackClient.OpenView(triggerID, modal)
 	if err != nil {
 		log.Println("Error opening modal:", err)
@@ -117,7 +84,6 @@ func (m *Mux) handleCheck(w http.ResponseWriter, userID string) {
 	views.WriteJSON(w, response)
 }
 
-// Interactive handles Slack interactive payloads (e.g. modal submit).
 func (m *Mux) Interactive(w http.ResponseWriter, r *http.Request) {
 	payload := r.FormValue("payload")
 
@@ -141,6 +107,10 @@ func (m *Mux) handleModalSubmit(callback slack.InteractionCallback) {
 	token := values["token_block"]["token_input"].Value
 	orgID := values["org_block"]["org_input"].Value
 	hoursStr := values["hours_block"]["hours_input"].Value
+	scheduleNotification := false
+	if v, ok := values["schedule_block"]["schedule_checkbox"]; ok && len(v.SelectedOptions) > 0 {
+		scheduleNotification = true
+	}
 
 	minHours := 8
 	if h, err := strconv.Atoi(hoursStr); err == nil {
@@ -148,9 +118,10 @@ func (m *Mux) handleModalSubmit(callback slack.InteractionCallback) {
 	}
 
 	m.Store.Set(userID, config.UserConfig{
-		Token:    token,
-		OrgID:    orgID,
-		MinHours: minHours,
+		Token:                token,
+		OrgID:                orgID,
+		MinHours:             minHours,
+		ScheduleNotification: scheduleNotification,
 	})
 	m.Store.SaveAsync()
 
