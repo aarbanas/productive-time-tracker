@@ -1,47 +1,33 @@
 package main
 
 import (
-	"fmt"
+	"context"
+	"log"
 	"os"
 
-	"github.com/aarbanas/productive-time-tracker/api"
-	"github.com/aarbanas/productive-time-tracker/appinit"
-	"github.com/aarbanas/productive-time-tracker/utilities"
+	"github.com/aarbanas/productive-time-tracker/slackbot"
+	"github.com/aarbanas/productive-time-tracker/slackbot/config"
 )
 
+func requiredEnv(name string) string {
+	v := os.Getenv(name)
+	if v == "" {
+		log.Fatalf("missing required environment variable %s", name)
+	}
+	return v
+}
+
 func main() {
-	token, orgID, err := appinit.LoadCredentials()
+	s3Bucket := requiredEnv("S3_BUCKET")
+	s3Key := requiredEnv("S3_KEY")
+	botToken := requiredEnv("SLACK_BOT_TOKEN")
+
+	ctx := context.Background()
+	store, err := config.NewStore(ctx, s3Bucket, s3Key)
 	if err != nil {
-		fmt.Printf("Failed to initialize client: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("unable to load AWS config: %v", err)
 	}
+	store.Load(ctx)
 
-	client := api.NewClient(token, orgID)
-
-	totalAbsenceMinutes, err := utilities.AbsenceMinutes(client)
-	if err != nil {
-		fmt.Printf("Failed to calculate absence minutes: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("Total absence hours: %d\n", totalAbsenceMinutes/60)
-
-	totalTimeEntriesMinutes, err := utilities.TimeEntriesMinutes(client)
-	if err != nil {
-		fmt.Printf("Failed to calculate time entries minutes: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("Total time entries hours: %d\n", totalTimeEntriesMinutes/60)
-
-	totalMinutes := totalAbsenceMinutes + totalTimeEntriesMinutes
-	requiredMinutes := utilities.RequiredWorkingMinutesPreviousMonth()
-	fmt.Printf("Required hours to track for previous month: %d\n", requiredMinutes/60)
-	fmt.Printf("Total hours tracked: %d\n", totalMinutes/60)
-
-	if totalMinutes < requiredMinutes {
-		fmt.Printf("You are %d minutes behind schedule.\n", requiredMinutes-totalMinutes)
-	} else {
-		fmt.Println("Great job! You are on track!")
-	}
+	slackbot.ServeSlackbot(store, botToken)
 }
