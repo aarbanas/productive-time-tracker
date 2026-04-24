@@ -1,48 +1,33 @@
 package utilities
 
 import (
-	"slices"
-
 	"github.com/aarbanas/productive-time-tracker/api"
 )
 
-func AbsenceMinutes(c *api.Client) (int32, error) {
-	after, before := PreviousMonthBounds()
-	bookings, events, err := c.GetBookingsWithEvents(after, before)
+func ReportMinutes(c *api.Client, currentMonth bool) (int32, error) {
+	var after, before string
+	if currentMonth {
+		after, before = CurrentMonthBounds()
+	} else {
+		after, before = PreviousMonthBounds()
+	}
+
+	reports, err := c.GetTimeReport(after, before)
 	if err != nil {
 		return 0, err
 	}
 
-	eventIDs := make([]string, 0, len(events))
-	for _, e := range events {
-		eventIDs = append(eventIDs, e.ID)
+	var totalWorkedMinutes float64
+	var totalScheduledMinutes float64
+	var totalAbsenceMinutes float64
+
+	for _, report := range reports {
+		totalWorkedMinutes += report.Attributes.WorkedTime
+		totalScheduledMinutes += report.Attributes.ScheduledTime
+		totalAbsenceMinutes += report.Attributes.EventTime
 	}
 
-	totalAbsenceMinutes := 0
-	for _, booking := range bookings {
-		if booking.Relationships.Event.Data == nil {
-			continue
-		}
-		eventID := booking.Relationships.Event.Data.ID
-		if slices.Contains(eventIDs, eventID) {
-			totalAbsenceMinutes += booking.Attributes.TotalTime
-		}
-	}
+	remainingMinutes := totalScheduledMinutes - (totalWorkedMinutes + totalAbsenceMinutes)
 
-	return int32(totalAbsenceMinutes), nil
-}
-
-func TimeEntriesMinutes(c *api.Client) (int32, error) {
-	after, before := PreviousMonthBounds()
-	entries, err := c.GetTimeEntries(after, before)
-	if err != nil {
-		return 0, err
-	}
-
-	total := 0
-	for _, entry := range entries {
-		total += entry.Attributes.Time
-	}
-
-	return int32(total), nil
+	return int32(remainingMinutes), nil
 }
