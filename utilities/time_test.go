@@ -78,50 +78,6 @@ func TestPreviousMonthBounds(t *testing.T) {
 	}
 }
 
-func TestRequiredWorkingMinutesPreviousMonth(t *testing.T) {
-	tests := []struct {
-		name             string
-		currentDate      time.Time
-		expectedMinutes  int32
-		expectedHours    float64
-		monthDescription string
-	}{
-		{
-			name:            "April 2026 - March has 23 working days",
-			currentDate:     time.Date(2026, time.April, 2, 12, 0, 0, 0, time.UTC),
-			expectedMinutes: 11040, // 23 days * 480 minutes
-			expectedHours:   184,
-		},
-		{
-			name:            "January 2026 - December 2025 has 23 working days",
-			currentDate:     time.Date(2026, time.January, 15, 12, 0, 0, 0, time.UTC),
-			expectedMinutes: 11040, // 23 days * 480 minutes
-			expectedHours:   184,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			minutes := RequiredWorkingMinutesPreviousMonth()
-
-			// Verify it's a positive number
-			if minutes <= 0 {
-				t.Errorf("Expected positive minutes, got %d", minutes)
-			}
-
-			// Verify it's divisible by 480 (8 hours in minutes)
-			if minutes%480 != 0 {
-				t.Errorf("Expected minutes divisible by 480, got %d", minutes)
-			}
-
-			// Verify reasonable range: 18-23 working days in a month
-			if minutes < 18*480 || minutes > 23*480 {
-				t.Errorf("Expected minutes between %d and %d, got %d", 18*480, 23*480, minutes)
-			}
-		})
-	}
-}
-
 func TestPreviousMonthBoundsDateFormat(t *testing.T) {
 	first, last := PreviousMonthBounds()
 
@@ -137,14 +93,43 @@ func TestPreviousMonthBoundsDateFormat(t *testing.T) {
 	}
 }
 
-func TestRequiredWorkingMinutesIsInt32(t *testing.T) {
-	minutes := RequiredWorkingMinutesPreviousMonth()
+func TestCurrentMonthBounds(t *testing.T) {
+	first, last := CurrentMonthBounds()
 
-	// Verify it returns int32 type
-	var _ int32 = minutes
+	firstParsed, err := time.Parse("2006-01-02", first)
+	if err != nil {
+		t.Fatalf("failed to parse first date: %v", err)
+	}
 
-	// Verify maximum value doesn't exceed int32
-	if minutes < 0 {
-		t.Errorf("Expected non-negative int32, got %d", minutes)
+	lastParsed, err := time.Parse("2006-01-02", last)
+	if err != nil {
+		t.Fatalf("failed to parse last date: %v", err)
+	}
+
+	if firstParsed.Day() != 1 {
+		t.Errorf("expected first day of month, got %d", firstParsed.Day())
+	}
+
+	if firstParsed.Year() != lastParsed.Year() || firstParsed.Month() != lastParsed.Month() {
+		t.Errorf("expected first and last to be in same month, got first=%s last=%s", first, last)
+	}
+
+	expectedLast := firstParsed.AddDate(0, 1, -1)
+	if !lastParsed.Equal(expectedLast) {
+		t.Errorf("expected last day %s, got %s", expectedLast.Format("2006-01-02"), last)
+	}
+}
+
+func TestCurrentMonthBoundsDateFormat(t *testing.T) {
+	first, last := CurrentMonthBounds()
+
+	_, err := time.Parse("2006-01-02", first)
+	if err != nil {
+		t.Errorf("First date has invalid format: %v", err)
+	}
+
+	_, err = time.Parse("2006-01-02", last)
+	if err != nil {
+		t.Errorf("Last date has invalid format: %v", err)
 	}
 }
