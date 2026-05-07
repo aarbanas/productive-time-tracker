@@ -1,0 +1,83 @@
+openapi: 3.0.3
+info:
+  title: Productive Time Reports API
+  version: v2
+  description: Subset of the Productive API spec covering the time reports endpoint.
+servers:
+  - url: https://api.productive.io/api/v2
+
+security:
+  - header_token: []
+
+paths:
+  /reports/time_reports:
+    get:
+      operationId: reports-time_reports-index
+      summary: Get time reports
+      description: Retrieve aggregated time report data grouped by configurable dimensions.
+      parameters:
+        - in: header
+          name: X-Organization-Id
+          required: true
+          schema:
+            type: string
+          description: Organization ID
+        - in: query
+          name: filter[after]
+          schema:
+            type: string
+            format: date
+          description: "Include only records after this date (YYYY-MM-DD)"
+        - in: query
+          name: filter[before]
+          schema:
+            type: string
+            format: date
+          description: "Include only records before this date (YYYY-MM-DD)"
+      responses:
+        "200":
+          description: Collection of time report aggregates
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: "#/components/schemas/TimeReportsResponse"
+
+components:
+  securitySchemes:
+    header_token:
+      type: apiKey
+      in: header
+      name: X-Auth-Token
+      description: Authentication via API token.
+
+  schemas:
+    TimeReportsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/TimeReport"
+
+    TimeReport:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        attributes:
+          $ref: "#/components/schemas/TimeReportAttributes"
+
+    TimeReportAttributes:
+      type: object
+      properties:
+        worked_time:
+          type: number
+          description: Total number of worked hours.
+        event_time:
+          type: number
+          description: Total number of hours for absence events.
+        scheduled_time:
+          type: number
+          description: Total number of scheduled hours.

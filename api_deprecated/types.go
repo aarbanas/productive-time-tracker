@@ -1,4 +1,4 @@
-package api
+package api_deprecated
 
 // TimeReport is a single time report row from the API.
 type TimeReport struct {

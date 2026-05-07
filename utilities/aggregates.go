@@ -4,7 +4,7 @@ import (
 	"github.com/aarbanas/productive-time-tracker/api"
 )
 
-func ReportMinutes(c *api.Client, currentMonth bool) (int32, error) {
+func ReportMinutes(c *api.ProductiveClient, currentMonth bool) (int32, error) {
 	var after, before string
 	if currentMonth {
 		after, before = CurrentMonthBounds()
@@ -22,9 +22,11 @@ func ReportMinutes(c *api.Client, currentMonth bool) (int32, error) {
 	var totalAbsenceMinutes float64
 
 	for _, report := range reports {
-		totalWorkedMinutes += report.Attributes.WorkedTime
-		totalScheduledMinutes += report.Attributes.ScheduledTime
-		totalAbsenceMinutes += report.Attributes.EventTime
+		if attrs, ok := report.Attributes.Get(); ok {
+			totalWorkedMinutes += attrs.WorkedTime.Or(0)
+			totalScheduledMinutes += attrs.ScheduledTime.Or(0)
+			totalAbsenceMinutes += attrs.EventTime.Or(0)
+		}
 	}
 
 	remainingMinutes := totalScheduledMinutes - (totalWorkedMinutes + totalAbsenceMinutes)
