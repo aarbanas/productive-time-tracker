@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/aarbanas/productive-time-tracker/api/generated"
 )
 
 const serverURL = "https://api.productive.io/api/v2"
@@ -12,21 +14,21 @@ type tokenSource struct {
 	token string
 }
 
-func (t *tokenSource) HeaderToken(_ context.Context, _ OperationName) (HeaderToken, error) {
-	var h HeaderToken
+func (t *tokenSource) HeaderToken(_ context.Context, _ generated.OperationName) (generated.HeaderToken, error) {
+	var h generated.HeaderToken
 	h.SetAPIKey(t.token)
 	return h, nil
 }
 
 // ProductiveClient wraps the generated ogen client with stored credentials.
 type ProductiveClient struct {
-	inner *Client
+	inner *generated.Client
 	orgID string
 }
 
 // NewProductiveClient returns a client authenticated with the given token and org ID.
 func NewProductiveClient(token, orgID string) (*ProductiveClient, error) {
-	c, err := NewClient(serverURL, &tokenSource{token: token})
+	c, err := generated.NewClient(serverURL, &tokenSource{token: token})
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +36,7 @@ func NewProductiveClient(token, orgID string) (*ProductiveClient, error) {
 }
 
 // GetTimeReport fetches aggregated time report data for the given date range (YYYY-MM-DD).
-func (c *ProductiveClient) GetTimeReport(after, before string) ([]TimeReport, error) {
+func (c *ProductiveClient) GetTimeReport(after, before string) ([]generated.TimeReport, error) {
 	afterDate, err := time.Parse("2006-01-02", after)
 	if err != nil {
 		return nil, fmt.Errorf("invalid after date: %w", err)
@@ -44,10 +46,10 @@ func (c *ProductiveClient) GetTimeReport(after, before string) ([]TimeReport, er
 		return nil, fmt.Errorf("invalid before date: %w", err)
 	}
 
-	resp, err := c.inner.ReportsTimeReportsIndex(context.Background(), ReportsTimeReportsIndexParams{
+	resp, err := c.inner.ReportsTimeReportsIndex(context.Background(), generated.ReportsTimeReportsIndexParams{
 		XOrganizationID: c.orgID,
-		FilterAfter:     NewOptDate(afterDate),
-		FilterBefore:    NewOptDate(beforeDate),
+		FilterAfter:     generated.NewOptDate(afterDate),
+		FilterBefore:    generated.NewOptDate(beforeDate),
 	})
 	if err != nil {
 		return nil, err
